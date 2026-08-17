@@ -7,6 +7,8 @@ from collections.abc import Sequence
 
 import numpy as np
 
+from .config import DEFAULT_PREAMBLE
+from .diagnostics import align_repeated_pattern
 from .geometry import angles_from_position
 from .scenario import create_scenario, run_receiver, validate_against_truth
 
@@ -45,12 +47,17 @@ def show_dashboard(seed: int, source_count: int, show_truth: bool = True) -> Non
     if not analysis.candidates:
         raise RuntimeError("no carriers were detected")
 
-    figure = plt.figure(figsize=(15, 8))
-    grid = figure.add_gridspec(2, 2, width_ratios=(1.05, 1.45))
-    scene_axis = figure.add_subplot(grid[:, 0], projection="3d")
+    figure = plt.figure(figsize=(15, 10))
+    grid = figure.add_gridspec(
+        3, 2, width_ratios=(1.05, 1.45), height_ratios=(1.0, 1.0, 0.9)
+    )
+    scene_axis = figure.add_subplot(grid[:2, 0], projection="3d")
     spectrum_axis = figure.add_subplot(grid[0, 1])
     envelope_axis = figure.add_subplot(grid[1, 1])
-    figure.subplots_adjust(left=0.05, right=0.81, hspace=0.32)
+    diagnostic_grid = grid[2, :].subgridspec(1, 2, width_ratios=(0.8, 1.7))
+    correlation_axis = figure.add_subplot(diagnostic_grid[0, 0])
+    bits_axis = figure.add_subplot(diagnostic_grid[0, 1])
+    figure.subplots_adjust(left=0.05, right=0.81, hspace=0.38, wspace=0.28)
 
     receivers = scenario.receiver_positions
     scene_axis.scatter(
@@ -109,6 +116,21 @@ def show_dashboard(seed: int, source_count: int, show_truth: bool = True) -> Non
     )
     envelope_axis.grid(alpha=0.25)
 
+    correlation_axis.set(
+        title="Raw RX / known TX cyclic correlation",
+        xlabel="candidate offset (bits)",
+        ylabel="correlation",
+        ylim=(-1.05, 1.05),
+    )
+    correlation_axis.grid(alpha=0.25)
+    bits_axis.set(
+        title="Known TX pattern vs aligned RX consensus",
+        xlabel="bit index: preamble then payload",
+        ylabel="bit value",
+        ylim=(-0.35, 1.65),
+    )
+    bits_axis.grid(alpha=0.25)
+
     labels = [
         f"{index}: {candidate.detection.frequency_hz:.1f} Hz"
         for index, candidate in enumerate(analysis.candidates)
@@ -149,6 +171,78 @@ def show_dashboard(seed: int, source_count: int, show_truth: bool = True) -> Non
         azimuth, elevation, _ = angles_from_position(position)
         row = validation[index]
         payload_text = bits_to_text(decode.payload if decode else None)
+        alignment = None
+        if show_truth and decode is not None and len(decode.hard_bits):
+            source = min(
+                scenario.sources,
+                key=lambda item: abs(
+                    item.carrier_hz - candidate.detection.frequency_hz
+                ),
+            )
+            tx_pattern = np.concatenate((DEFAULT_PREAMBLE, source.payload))
+            alignment = align_repeated_pattern(decode.hard_bits, tx_pattern)
+
+        correlation_axis.clear()
+        bits_axis.clear()
+        correlation_axis.set(
+            title="Raw RX / known TX cyclic correlation",
+            xlabel="candidate offset (bits)",
+            ylabel="correlation",
+            ylim=(-1.05, 1.05),
+        )
+        bits_axis.set(
+            title="Known TX pattern vs aligned RX consensus",
+            xlabel="bit index: preamble then payload",
+            ylabel="bit value",
+            ylim=(-0.35, 1.65),
+        )
+        correlation_axis.grid(alpha=0.25)
+        bits_axis.grid(alpha=0.25)
+        if alignment is not None:
+            lags = np.arange(len(alignment.correlations))
+            correlation_axis.plot(lags, alignment.correlations, ".-", markersize=3)
+            correlation_axis.axvline(
+                alignment.offset_bits, color="#d85b38", linestyle="--"
+            )
+            bit_indices = np.arange(len(alignment.tx_pattern))
+            bits_axis.step(
+                bit_indices,
+                alignment.tx_pattern + 0.18,
+                where="mid",
+                label="known TX (+0.18)",
+                color="#315d9b",
+            )
+            bits_axis.step(
+                bit_indices,
+                alignment.rx_consensus - 0.18,
+                where="mid",
+                label="aligned RX (-0.18)",
+                color="#e68310",
+            )
+            mismatches = alignment.tx_pattern != alignment.rx_consensus
+            bits_axis.plot(
+                bit_indices[mismatches],
+                np.full(np.sum(mismatches), 1.42),
+                "x",
+                color="#d62728",
+                label="mismatch",
+            )
+            bits_axis.axvline(
+                len(DEFAULT_PREAMBLE) - 0.5,
+                color="black",
+                alpha=0.35,
+                linestyle=":",
+            )
+            bits_axis.legend(loc="upper right", ncols=3, fontsize=8)
+        else:
+            correlation_axis.text(
+                0.5,
+                0.5,
+                "truth comparison hidden or no recovered bits",
+                ha="center",
+                va="center",
+                transform=correlation_axis.transAxes,
+            )
         lines = [
             f"frequency: {candidate.detection.frequency_hz:8.2f} Hz",
             f"SNR:       {candidate.detection.snr_db:8.1f} dB",
@@ -174,6 +268,15 @@ def show_dashboard(seed: int, source_count: int, show_truth: bool = True) -> Non
                     f"BER:      {bit_error_rate:8.4f}",
                 )
             )
+            if alignment is not None:
+                lines.extend(
+                    (
+                        f"raw bits: {len(decode.hard_bits):8d}",
+                        f"bit shift:{alignment.offset_bits:8d}",
+                        f"max corr: {np.max(alignment.correlations):8.3f}",
+                        f"align BER:{alignment.bit_error_rate:8.4f}",
+                    )
+                )
         info.set_text("\n".join(lines))
         figure.canvas.draw_idle()
 

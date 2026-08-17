@@ -28,4 +28,5 @@ def test_decoder_recovers_timing_and_payload_without_clock_oracle() -> None:
     assert decoded.locked
     assert decoded.packet_count >= 3
     assert np.array_equal(decoded.payload, payload)
-
+    assert len(decoded.hard_bits) > signal.packet_length
+    assert len(decoded.packet_starts) == decoded.packet_count

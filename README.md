@@ -40,6 +40,19 @@ beam-former
 Use the radio buttons to select a detected beacon. The dashboard updates the
 estimated 3D direction, spectrum cursor, isolated ASK envelope, recovered
 symbol levels, preamble score, packet count, payload, and validation errors.
+For simulated data it also retains the unaligned hard-decision RX stream and
+shows two truth-referenced diagnostics:
+
+- cyclic bipolar correlation versus every possible packet offset; the peak is
+  the estimated bit shift (`+1` means exact agreement, `0` chance-level, and
+  `-1` inversion), and
+- the known transmitted `preamble + payload` overlaid with an aligned RX
+  consensus formed by folding all recovered repetitions onto one packet.
+
+Red crosses mark aligned bit mismatches. `align BER` is computed only after the
+cyclic shift is estimated. These comparisons are dashboard validation only;
+the transmitter pattern is not passed to carrier detection, localization,
+timing recovery, or packet decoding.
 
 To hide all simulator truth information:
 
@@ -73,6 +86,7 @@ frequency   Δf      angle error   range error   lock   BER
 | `spectral.py` | STFT, carrier detection, and covariance estimation |
 | `localization.py` | Near-field Capon scan and MVDR beamforming |
 | `decoder.py` | Carrier isolation, timing recovery, and packet decoding |
+| `diagnostics.py` | Truth-referenced cyclic bit alignment and comparison |
 | `receiver.py` | Receiver-only orchestration |
 | `scenario.py` | Test scenes and truth-only validation |
 | `app.py` | Interactive dashboard and command-line report |
@@ -106,4 +120,3 @@ keeping the demonstration fast.
 ## License
 
 GNU General Public License v3.0 (`GPL-3.0-only`).
-

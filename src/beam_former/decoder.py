@@ -90,6 +90,8 @@ def decode_ask_packets(
             level_one=None,
             envelope=envelope,
             symbol_metrics=best_metrics,
+            hard_bits=np.empty(0, dtype=np.int8),
+            packet_starts=(),
         )
 
     soft, level_zero, level_one = _soft_symbols(best_metrics)
@@ -101,12 +103,14 @@ def decode_ask_packets(
     phase_class = best_start % packet_length
     payloads: list[np.ndarray] = []
     preamble_errors: list[int] = []
+    packet_starts: list[int] = []
     for start in range(phase_class, len(hard_bits) - packet_length + 1, packet_length):
         packet = hard_bits[start : start + packet_length]
         errors = int(np.sum(packet[: len(DEFAULT_PREAMBLE)] != DEFAULT_PREAMBLE))
         if errors <= 2:
             preamble_errors.append(errors)
             payloads.append(packet[len(DEFAULT_PREAMBLE) :].copy())
+            packet_starts.append(start)
 
     if not payloads:
         return DecodeResult(
@@ -120,6 +124,8 @@ def decode_ask_packets(
             level_one=level_one,
             envelope=envelope,
             symbol_metrics=best_metrics,
+            hard_bits=hard_bits,
+            packet_starts=(),
         )
 
     stacked = np.stack(payloads)
@@ -135,4 +141,6 @@ def decode_ask_packets(
         level_one=level_one,
         envelope=envelope,
         symbol_metrics=best_metrics,
+        hard_bits=hard_bits,
+        packet_starts=tuple(packet_starts),
     )

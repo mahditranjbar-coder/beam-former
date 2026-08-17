@@ -51,6 +51,8 @@ class DecodeResult:
     level_one: float | None
     envelope: FloatArray
     symbol_metrics: FloatArray
+    hard_bits: IntArray
+    packet_starts: tuple[int, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,4 +68,3 @@ class AnalysisResult:
     frequencies_hz: FloatArray
     spectrum: FloatArray
     candidates: tuple[CandidateResult, ...]
-
